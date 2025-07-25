@@ -2,6 +2,58 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+def generate_summary_insights(df):
+    import pandas as pd
+    from collections import Counter
+
+    if df.empty or 'Level of Impact' not in df.columns or 'Stakeholder Group(s)' not in df.columns:
+        return "No summary available."
+
+    total_changes = len(df)
+    impact_counts = df['Level of Impact'].str.strip().str.capitalize().value_counts()
+    impact_summary = ", ".join(f"{v} {k}" for k, v in impact_counts.items())
+
+    # Flatten stakeholder group lists
+    stakeholder_series = df['Stakeholder Group(s)'].dropna().apply(lambda x: [s.strip() for s in str(x).split(",")])
+    all_stakeholders = [s for sublist in stakeholder_series for s in sublist]
+    stakeholder_counts = Counter(all_stakeholders)
+    top_impacted = stakeholder_counts.most_common(3)
+
+    # Perception summary
+    perception_df = df[['Level of Impact', 'Perception of Change', 'Stakeholder Group(s)']].dropna()
+    perception_df['Stakeholder Group(s)'] = perception_df['Stakeholder Group(s)'].apply(lambda x: [s.strip() for s in str(x).split(",")])
+    negative_stakeholders = Counter()
+    high_impact_negative = set()
+    high_impact_stakeholders = Counter()
+
+    for _, row in perception_df.iterrows():
+        if row['Perception of Change'].strip().lower() == "negative":
+            for group in row['Stakeholder Group(s)']:
+                negative_stakeholders[group] += 1
+                if row['Level of Impact'].strip().lower() == "high":
+                    high_impact_negative.add(group)
+        if row['Level of Impact'].strip().lower() == "high":
+            for group in row['Stakeholder Group(s)']:
+                high_impact_stakeholders[group] += 1
+
+    # Compose summary
+    summary_lines = [
+        f"📊 Insights Summary",
+        f"• {total_changes} changes analyzed: {impact_summary} impact",
+    ]
+    if top_impacted:
+        top_impacted_line = "• Most impacted stakeholder groups: " + ", ".join(f"{g} ({c} changes)" for g, c in top_impacted)
+        summary_lines.append(top_impacted_line)
+    if negative_stakeholders:
+        summary_lines.append("• Stakeholders with mostly negative perception: " + ", ".join(negative_stakeholders.keys()))
+    if high_impact_negative:
+        summary_lines.append("• High impact changes perceived negatively for: " + ", ".join(high_impact_negative))
+    if any(v >= 2 for v in high_impact_stakeholders.values()):
+        multi_high = [k for k, v in high_impact_stakeholders.items() if v >= 2]
+        summary_lines.append("• Stakeholders with multiple High impact changes: " + ", ".join(multi_high))
+
+    return "\n".join(summary_lines)
+
 
 st.set_page_config(layout="wide")
 st.title("Change Impact Analysis Summary Tool (v13)")
