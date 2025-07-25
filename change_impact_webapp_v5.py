@@ -9,9 +9,12 @@ st.set_page_config(layout="wide")
 def get_worksheet(file):
     xl = pd.ExcelFile(file)
     for sheet in xl.sheet_names:
-        df = xl.parse(sheet)
-        if df.shape[1] > 5:
-            return df
+        try:
+            df = xl.parse(sheet, header=1)  # Use row 2 as header (index 1)
+            if df.shape[1] > 5:
+                return df
+        except:
+            continue
     return None
 
 def fuzzy_match_column(columns, keyword):
@@ -91,7 +94,7 @@ def generate_summary(df):
 
     return "\n".join(summary_lines)
 
-st.title("Change Impact Analysis Viewer (v14.1)")
+st.title("Change Impact Analysis Viewer (v14.3)")
 
 uploaded_file = st.file_uploader("Upload Change Impact Excel", type=["xlsx"])
 if uploaded_file:
