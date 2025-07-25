@@ -4,7 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 st.set_page_config(layout="wide")
-st.title("Change Impact Analysis Summary Tool (v11 - Cleaned + Resilient)")
+st.title("Change Impact Analysis Summary Tool (v12 - Positional Fallback for Impact)")
 
 uploaded_file = st.file_uploader("Upload a Change Impact Excel File", type=["xlsx"])
 if not uploaded_file:
@@ -60,6 +60,10 @@ identifier_col = find_column(["workstream"]) if is_new_format else find_column([
 stakeholder_col = find_column(["stakeholder"])
 impact_col = find_column(["impact"])
 perception_col = find_column(["perception"])
+
+# Use fallback by column position if fuzzy match fails
+if not impact_col:
+    impact_col = df.columns[3] if is_new_format else df.columns[4]
 
 required = [identifier_col, stakeholder_col, impact_col, perception_col]
 if any(x is None for x in required):
