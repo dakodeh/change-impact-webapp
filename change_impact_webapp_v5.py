@@ -4,7 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 st.set_page_config(layout="wide")
-st.title("Change Impact Analysis Summary Tool (v8 - Sheet-Agnostic)")
+st.title("Change Impact Analysis Summary Tool (v9 - Custom Colors & Titles)")
 
 uploaded_file = st.file_uploader("Upload a Change Impact Excel File", type=["xlsx"])
 if not uploaded_file:
@@ -75,24 +75,36 @@ df["Stakeholder"] = df["Stakeholder"].astype(str)
 df = df.assign(Stakeholder=df["Stakeholder"].str.split(",")).explode("Stakeholder")
 df["Stakeholder"] = df["Stakeholder"].str.strip()
 
-# Chart 1: Impact by Stakeholder
+# Chart 1: Impact by Stakeholder with custom colors
+impact_order = ["Low", "Medium", "High"]
+impact_colors = {"Low": "green", "Medium": "orange", "High": "red"}
+
 impact_counts = df.groupby(["Stakeholder", "Impact"]).size().unstack(fill_value=0)
-st.subheader("Change Impacts by Stakeholder Group")
+impact_counts = impact_counts.reindex(columns=impact_order, fill_value=0)
+
+st.subheader("Degree of Impact by Stakeholder")
 fig1, ax1 = plt.subplots(figsize=(10, 6))
-impact_counts.plot(kind="bar", stacked=True, ax=ax1)
+impact_counts.plot(kind="bar", stacked=True, ax=ax1, color=[impact_colors.get(col, "#333333") for col in impact_counts.columns])
 ax1.set_ylabel("Number of Changes")
 ax1.set_xlabel("Stakeholder Group")
-ax1.set_title("Change Impacts by Stakeholder")
+ax1.set_title("Degree of Impact by Stakeholder")
+ax1.legend(title="Impact Level")
 st.pyplot(fig1)
 
-# Chart 2: Perception by Stakeholder
+# Chart 2: Perception by Stakeholder with custom colors
+perception_order = ["Negative", "Neutral", "Positive"]
+perception_colors = {"Negative": "red", "Neutral": "blue", "Positive": "green"}
+
 perception_counts = df.groupby(["Stakeholder", "Perception"]).size().unstack(fill_value=0)
-st.subheader("Change Readiness by Stakeholder Group")
+perception_counts = perception_counts.reindex(columns=perception_order, fill_value=0)
+
+st.subheader("Perception of Change by Stakeholder")
 fig2, ax2 = plt.subplots(figsize=(10, 6))
-perception_counts.plot(kind="bar", stacked=True, ax=ax2)
+perception_counts.plot(kind="bar", stacked=True, ax=ax2, color=[perception_colors.get(col, "#333333") for col in perception_counts.columns])
 ax2.set_ylabel("Number of Changes")
 ax2.set_xlabel("Stakeholder Group")
-ax2.set_title("Change Perception by Stakeholder")
+ax2.set_title("Perception of Change by Stakeholder")
+ax2.legend(title="Perception")
 st.pyplot(fig2)
 
 # Summary insight
