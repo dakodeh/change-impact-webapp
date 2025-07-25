@@ -4,7 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 st.set_page_config(layout="wide")
-st.title("Change Impact Analysis Summary Tool (v12 - Positional Fallback for Impact)")
+st.title("Change Impact Analysis Summary Tool (v13 - Unified Impact Column)")
 
 uploaded_file = st.file_uploader("Upload a Change Impact Excel File", type=["xlsx"])
 if not uploaded_file:
@@ -23,11 +23,10 @@ for sheet in xls.sheet_names:
         cols_lower = [col.lower() for col in df.columns]
         has_workstream = any("workstream" in col for col in cols_lower)
         has_process = any("process" in col for col in cols_lower)
-        has_subprocess = any("sub-process" in col for col in cols_lower)
         has_stakeholder = any("stakeholder" in col for col in cols_lower)
         has_impact = any("impact" in col for col in cols_lower)
         has_perception = any("perception" in col for col in cols_lower)
-        if (has_workstream or (has_process and has_subprocess)) and has_stakeholder and has_impact and has_perception:
+        if (has_workstream or has_process) and has_stakeholder and has_impact and has_perception:
             target_df = df.copy()
             target_sheet = sheet
             break
@@ -41,14 +40,16 @@ if target_df is None:
 
 st.info(f"Using sheet: **{target_sheet}**")
 
-# Lowercase column names for detection
+# Normalize column headers
 df = target_df
 df.columns = df.columns.str.strip().str.replace("\n", " ", regex=True)
 cols_lower = [col.lower() for col in df.columns]
-is_new_format = any("workstream" in col for col in cols_lower)
-is_old_format = any("process" in col for col in cols_lower) and any("sub-process" in col for col in cols_lower)
 
-# Identify relevant columns
+# Determine format
+is_new_format = any("workstream" in col for col in cols_lower)
+is_old_format = any("process" in col for col in cols_lower)
+
+# Identify key columns
 def find_column(keywords):
     for col in df.columns:
         col_lower = col.lower()
@@ -58,12 +59,8 @@ def find_column(keywords):
 
 identifier_col = find_column(["workstream"]) if is_new_format else find_column(["process"])
 stakeholder_col = find_column(["stakeholder"])
-impact_col = find_column(["impact"])
 perception_col = find_column(["perception"])
-
-# Use fallback by column position if fuzzy match fails
-if not impact_col:
-    impact_col = df.columns[3] if is_new_format else df.columns[4]
+impact_col = df.columns[3]  # Always use 4th column for Level of Impact
 
 required = [identifier_col, stakeholder_col, impact_col, perception_col]
 if any(x is None for x in required):
