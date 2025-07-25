@@ -178,3 +178,5 @@ else:
     count = high_impact_df["Stakeholder"].value_counts().max()
     st.markdown(f"**Interesting Fact:** The stakeholder group '{top_group}' has the highest number of high-impact changes ({count}).**")
     st.markdown(f"**Conclusion:** The visualizations highlight that **{top_group}** faces the most high-impact changes, requiring focused training or communication.")
+
+# trigger redeploy
