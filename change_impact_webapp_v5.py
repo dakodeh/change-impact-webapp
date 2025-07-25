@@ -10,22 +10,25 @@ def get_worksheet(file):
     xl = pd.ExcelFile(file)
     for sheet in xl.sheet_names:
         try:
-            df = xl.parse(sheet, header=1)  # Use row 2 as header (index 1)
+            df = xl.parse(sheet, header=1)  # Use second row as header
             if df.shape[1] > 5:
                 return df
         except:
             continue
     return None
 
-def fuzzy_match_column(columns, keyword):
+def fuzzy_match_column(columns, keyword, exclusions=None):
+    exclusions = exclusions or []
     for col in columns:
-        if keyword.lower() in col.lower():
+        col_lower = col.lower()
+        if keyword in col_lower and not any(ex in col_lower for ex in exclusions):
             return col
     return None
 
 def extract_data(df):
     df.columns = df.columns.str.strip().str.replace("\n", " ", regex=True)
-    impact_col = fuzzy_match_column(df.columns, "impact")
+
+    impact_col = fuzzy_match_column(df.columns, "impact", exclusions=["workstream"])
     stakeholder_col = fuzzy_match_column(df.columns, "stakeholder")
     perception_col = fuzzy_match_column(df.columns, "perception")
 
@@ -44,7 +47,13 @@ def plot_impact(df):
     impact_levels = ["High", "Medium", "Low"]
     colors = {"High": "red", "Medium": "orange", "Low": "green"}
     df_counts = df.groupby(["Stakeholder", "Impact"]).size().unstack(fill_value=0)
+
+    # Filter only valid impact levels
     df_counts = df_counts[[lvl for lvl in impact_levels if lvl in df_counts.columns]]
+
+    if df_counts.empty:
+        st.warning("No recognizable impact levels (High, Medium, Low) found in the data.")
+        return
 
     fig, ax = plt.subplots(figsize=(10, 6))
     df_counts.plot(kind="bar", stacked=True, ax=ax, color=[colors[lvl] for lvl in df_counts.columns])
@@ -59,7 +68,13 @@ def plot_perception(df):
     perception_levels = ["Negative", "Neutral", "Positive"]
     colors = {"Negative": "red", "Neutral": "blue", "Positive": "green"}
     df_counts = df.groupby(["Stakeholder", "Perception"]).size().unstack(fill_value=0)
+
+    # Filter only valid perceptions
     df_counts = df_counts[[lvl for lvl in perception_levels if lvl in df_counts.columns]]
+
+    if df_counts.empty:
+        st.warning("No recognizable perception values (Negative, Neutral, Positive) found in the data.")
+        return
 
     fig, ax = plt.subplots(figsize=(10, 6))
     df_counts.plot(kind="bar", stacked=True, ax=ax, color=[colors[lvl] for lvl in df_counts.columns])
@@ -94,7 +109,7 @@ def generate_summary(df):
 
     return "\n".join(summary_lines)
 
-st.title("Change Impact Analysis Viewer (v14.3)")
+st.title("Change Impact Analysis Viewer (v14.4)")
 
 uploaded_file = st.file_uploader("Upload Change Impact Excel", type=["xlsx"])
 if uploaded_file:
