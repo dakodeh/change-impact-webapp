@@ -4,34 +4,49 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 st.set_page_config(layout="wide")
-st.title("Change Impact Analysis Summary Tool (v7)")
+st.title("Change Impact Analysis Summary Tool (v8 - Sheet-Agnostic)")
 
 uploaded_file = st.file_uploader("Upload a Change Impact Excel File", type=["xlsx"])
 if not uploaded_file:
     st.stop()
 
-# Load the Excel file and find the Known Change Impacts sheet
+# Load Excel file
 xls = pd.ExcelFile(uploaded_file)
-sheet_name = "Known Change Impacts"
-if sheet_name not in xls.sheet_names:
-    st.error(f"Could not find the '{sheet_name}' sheet in this file.")
+
+# Try to identify a valid sheet
+target_df = None
+target_sheet = None
+for sheet in xls.sheet_names:
+    try:
+        df = pd.read_excel(xls, sheet_name=sheet, skiprows=1)
+        df.columns = df.columns.str.strip().str.replace("\n", " ", regex=True)
+        cols_lower = [col.lower() for col in df.columns]
+        has_workstream = any("workstream" in col for col in cols_lower)
+        has_process = any("process" in col for col in cols_lower)
+        has_subprocess = any("sub-process" in col for col in cols_lower)
+        has_stakeholder = any("stakeholder" in col for col in cols_lower)
+        has_impact = any("impact" in col for col in cols_lower)
+        has_perception = any("perception" in col for col in cols_lower)
+        if (has_workstream or (has_process and has_subprocess)) and has_stakeholder and has_impact and has_perception:
+            target_df = df.copy()
+            target_sheet = sheet
+            break
+    except Exception:
+        continue
+
+if target_df is None:
+    st.error("Could not find a sheet with the required Change Impact structure.")
+    st.write("Sheets checked:", xls.sheet_names)
     st.stop()
 
-# Read data skipping the first row, which contains helper text
-df = pd.read_excel(xls, sheet_name=sheet_name, skiprows=1)
+st.info(f"Using sheet: **{target_sheet}**")
+
+# Lowercase column names for detection
+df = target_df
 df.columns = df.columns.str.strip().str.replace("\n", " ", regex=True)
-
-# Lowercase columns for detection
 cols_lower = [col.lower() for col in df.columns]
-
-# Detect format
 is_new_format = any("workstream" in col for col in cols_lower)
 is_old_format = any("process" in col for col in cols_lower) and any("sub-process" in col for col in cols_lower)
-
-if not is_new_format and not is_old_format:
-    st.error("Unrecognized format. Expecting either 'Workstream' or 'Process/Sub-Process' in column headers.")
-    st.write("Found columns:", df.columns.tolist())
-    st.stop()
 
 # Identify relevant columns
 def find_column(keywords):
