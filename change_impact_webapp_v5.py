@@ -56,7 +56,7 @@ def generate_summary_insights(df):
 
 
 st.set_page_config(layout="wide")
-st.title("Change Impact Analysis Summary Tool (v15.4)")
+st.title("Change Impact Analysis Summary Tool (v15.5)")
 
 uploaded_file = st.file_uploader("Upload a Change Impact Excel File", type=["xlsx"])
 if not uploaded_file:
