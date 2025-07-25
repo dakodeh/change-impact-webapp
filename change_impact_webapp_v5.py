@@ -10,24 +10,26 @@ def get_worksheet(file):
     xl = pd.ExcelFile(file)
     for sheet in xl.sheet_names:
         df = xl.parse(sheet)
-        if df.shape[1] > 5 and ("Impact" in df.columns.tolist() or df.columns.str.contains("Impact", case=False).any()):
+        if df.shape[1] > 5:
             return df
     return None
 
+def fuzzy_match_column(columns, keyword):
+    for col in columns:
+        if keyword.lower() in col.lower():
+            return col
+    return None
+
 def extract_data(df):
-    # Clean column headers
-    df.columns = df.columns.str.strip()
+    df.columns = df.columns.str.strip().str.replace("\n", " ", regex=True)
+    impact_col = fuzzy_match_column(df.columns, "impact")
+    stakeholder_col = fuzzy_match_column(df.columns, "stakeholder")
+    perception_col = fuzzy_match_column(df.columns, "perception")
 
-    # Try to get impact column
-    impact_col = df.columns[3]
-    stakeholder_col = [col for col in df.columns if "stakeholder" in col.lower()]
-    perception_col = [col for col in df.columns if "perception" in col.lower()]
-
-    if not stakeholder_col or not perception_col:
+    if not all([impact_col, stakeholder_col, perception_col]):
         return None, None, None
 
-    # Normalize values
-    df = df[[impact_col, stakeholder_col[0], perception_col[0]]].dropna()
+    df = df[[impact_col, stakeholder_col, perception_col]].dropna()
     df.columns = ["Impact", "Stakeholder", "Perception"]
     df["Impact"] = df["Impact"].astype(str).str.strip().str.title()
     df["Perception"] = df["Perception"].astype(str).str.strip().str.title()
@@ -89,7 +91,7 @@ def generate_summary(df):
 
     return "\n".join(summary_lines)
 
-st.title("Change Impact Analysis Viewer (v14)")
+st.title("Change Impact Analysis Viewer (v14.1)")
 
 uploaded_file = st.file_uploader("Upload Change Impact Excel", type=["xlsx"])
 if uploaded_file:
