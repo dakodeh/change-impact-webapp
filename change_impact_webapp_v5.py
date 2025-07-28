@@ -56,7 +56,7 @@ def generate_summary_insights(df):
 
 
 st.set_page_config(layout="wide")
-st.title("Change Impact Analysis Summary Tool (v15.4)")
+st.title("Change Impact Analysis Summary Tool (v15.8)")
 
 uploaded_file = st.file_uploader("Upload a Change Impact Excel File", type=["xlsx"])
 if not uploaded_file:
@@ -180,69 +180,3 @@ else:
     st.markdown(f"**Conclusion:** The visualizations highlight that **{top_group}** faces the most high-impact changes, requiring focused training or communication.")
 
 # trigger redeploy
-
-
-# --- Level 2 Summary Insights Logic ---
-def generate_level_2_insights(df):
-    try:
-        # Normalize column names
-        df.columns = df.columns.str.strip()
-
-        # Determine key column names
-        impact_col = [col for col in df.columns if "Impact" in col and "Level" in col][0]
-        perception_col = [col for col in df.columns if "Perception" in col][0]
-        stakeholder_col = [col for col in df.columns if "Stakeholder" in col][0]
-        workstream_col = "Workstream" if "Workstream" in df.columns else "Process"
-
-        # Clean and explode stakeholders
-        df[stakeholder_col] = df[stakeholder_col].astype(str)
-        df = df.assign(Stakeholder=df[stakeholder_col].str.split(",")).explode("Stakeholder")
-        df["Stakeholder"] = df["Stakeholder"].str.strip()
-
-        # Total changes per stakeholder
-        total_changes = df.groupby("Stakeholder").size()
-
-        # Negative perception count
-        negative_perception = (
-            df[df[perception_col].str.lower() == "negative"]
-            .groupby("Stakeholder")
-            .size()
-        )
-
-        mostly_negative = negative_perception[
-            (negative_perception / total_changes) > 0.5
-        ]
-
-        # High volume + negative perception
-        high_volume_negative = mostly_negative[negative_perception > 2]
-
-        # Clustered high impacts by workstream
-        high_impact_clusters = (
-            df[df[impact_col].str.lower() == "high"]
-            .groupby(workstream_col)
-            .size()
-        )
-        clustered_high_impact = high_impact_clusters[high_impact_clusters > 1]
-
-        insights = []
-
-        for stakeholder, count in mostly_negative.items():
-            insights.append(f"• The {stakeholder} group received {total_changes[stakeholder]} changes, "
-                            f"of which {count} were perceived negatively.")
-
-        for stakeholder in high_volume_negative.index:
-            insights.append(f"• {stakeholder} has high change volume with notable resistance — consider targeted support.")
-
-        for ws, count in clustered_high_impact.items():
-            insights.append(f"• The {ws} workstream includes {count} high-impact changes — clustered impact may require attention.")
-
-        if not insights:
-            return "No notable conditional patterns found."
-        return "\n".join(insights)
-    except Exception as e:
-        return f"⚠️ Could not generate insights due to error: {e}"
-
-# Inject into Streamlit display
-insights = generate_level_2_insights(df)
-st.markdown("### 🔍 Level 2 Insights Summary")
-st.markdown(insights)
