@@ -3,7 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 st.set_page_config(layout="wide")
-st.title("Change Impact Analysis Summary Tool (v15.0.2)")
+st.title("Change Impact Analysis Summary Tool (v15.0.3)")
 
 # Upload Excel file
 uploaded_file = st.file_uploader("Upload Change Impact Analysis Excel File", type=["xlsx"])
