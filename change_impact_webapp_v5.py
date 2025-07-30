@@ -1,36 +1,78 @@
 
-# change_impact_webapp_v15_0_4.py
-# Updated to robustly detect 'Level of Impact' and 'Perception of Change' columns regardless of position or name variation
-
 import streamlit as st
 import pandas as pd
-
-def find_column(columns, keywords):
-    for col in columns:
-        if all(k.lower() in col.lower() for k in keywords):
-            return col
-    return None
-
-def load_data(uploaded_file):
-    xls = pd.ExcelFile(uploaded_file)
-    sheet_name = xls.sheet_names[0]  # assume first sheet
-    df = xls.parse(sheet_name)
-    df.columns = df.columns.str.strip()  # Strip whitespace
-    return df
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 st.set_page_config(layout="wide")
-st.title("Change Impact Analysis Summary Tool (v15.0.4)")
+st.title("Change Impact Analysis Summary Tool (v15.0.3)")
+
+def load_data(uploaded_file):
+    try:
+        # Try to read the first sheet with header in the second row (row index 1)
+        xl = pd.ExcelFile(uploaded_file)
+        sheet_name = xl.sheet_names[0]
+        df = pd.read_excel(xl, sheet_name=sheet_name, header=1)
+        return df
+    except Exception as e:
+        st.error(f"Error loading file: {e}")
+        return None
+
+def plot_impact(df):
+    impact_col = [col for col in df.columns if "Impact" in col and "Level" in col]
+    stakeholder_col = [col for col in df.columns if "Stakeholder" in col]
+
+    if not impact_col or not stakeholder_col:
+        st.warning("The worksheet doesn't contain recognizable Impact or Stakeholder columns.")
+        return
+
+    impact_col = impact_col[0]
+    stakeholder_col = stakeholder_col[0]
+
+    df = df[[stakeholder_col, impact_col]].dropna()
+    df[impact_col] = df[impact_col].str.strip().str.title()
+
+    color_map = {"Low": "green", "Medium": "orange", "High": "red"}
+    df[impact_col] = df[impact_col].map(lambda x: x if x in color_map else "Other")
+
+    summary = df.groupby([stakeholder_col, impact_col]).size().unstack(fill_value=0)
+    summary = summary[["Low", "Medium", "High"]] if set(["Low", "Medium", "High"]).issubset(summary.columns) else summary
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    summary.plot(kind="bar", stacked=True, color=[color_map.get(x, "gray") for x in summary.columns], ax=ax)
+    plt.title("Degree of Impact by Stakeholder")
+    plt.xlabel("Stakeholder")
+    plt.ylabel("Count of Changes")
+    st.pyplot(fig)
+
+def plot_perception(df):
+    perception_col = [col for col in df.columns if "Perception" in col]
+    stakeholder_col = [col for col in df.columns if "Stakeholder" in col]
+
+    if not perception_col or not stakeholder_col:
+        st.warning("The worksheet doesn't contain recognizable Perception or Stakeholder columns.")
+        return
+
+    perception_col = perception_col[0]
+    stakeholder_col = stakeholder_col[0]
+
+    df = df[[stakeholder_col, perception_col]].dropna()
+    df[perception_col] = df[perception_col].str.strip().str.title()
+
+    color_map = {"Positive": "green", "Neutral": "blue", "Negative": "red"}
+    df[perception_col] = df[perception_col].map(lambda x: x if x in color_map else "Other")
+
+    summary = df.groupby([stakeholder_col, perception_col]).size().unstack(fill_value=0)
+    fig, ax = plt.subplots(figsize=(10, 5))
+    summary.plot(kind="bar", stacked=True, color=[color_map.get(x, "gray") for x in summary.columns], ax=ax)
+    plt.title("Perception of Change by Stakeholder")
+    plt.xlabel("Stakeholder")
+    plt.ylabel("Count of Changes")
+    st.pyplot(fig)
 
 uploaded_file = st.file_uploader("Upload your Change Impact Excel file", type=["xlsx"])
 if uploaded_file:
     df = load_data(uploaded_file)
-
-    impact_col = find_column(df.columns, ["Impact", "Level"])
-    perception_col = find_column(df.columns, ["Perception", "Change"])
-    stakeholder_col = find_column(df.columns, ["Stakeholder"])
-
-    if not impact_col or not perception_col:
-        st.error("The worksheet doesn't contain recognizable Impact or Perception columns.")
-    else:
-        st.success(f"Columns detected - Impact: '{impact_col}', Perception: '{perception_col}'")
-        st.write(df[[impact_col, perception_col, stakeholder_col]].head())
+    if df is not None:
+        plot_impact(df)
+        plot_perception(df)
