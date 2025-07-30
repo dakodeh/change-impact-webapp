@@ -4,125 +4,80 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 st.set_page_config(layout="wide")
-st.title("Change Impact Analysis Summary Tool (v15.0.4)")
+st.title("Change Impact Analysis Summary Tool (v15.0.1)")
 
-uploaded_file = st.file_uploader("Upload a Change Impact Excel File", type=["xlsx"])
-if not uploaded_file:
-    st.stop()
-
-# Load Excel file
-xls = pd.ExcelFile(uploaded_file)
-
-# Try to identify a valid sheet
-target_df = None
-target_sheet = None
-for sheet in xls.sheet_names:
-    try:
-        df = pd.read_excel(xls, sheet_name=sheet, skiprows=1)
-        df.columns = df.columns.str.strip().str.replace("\n", " ", regex=True)
-        cols_lower = [col.lower() for col in df.columns]
-        has_workstream = any("workstream" in col for col in cols_lower)
-        has_process = any("process" in col for col in cols_lower)
-        has_stakeholder = any("stakeholder" in col for col in cols_lower)
-        has_impact = any("impact" in col for col in cols_lower)
-        has_perception = any("perception" in col for col in cols_lower)
-        if (has_workstream or has_process) and has_stakeholder and has_impact and has_perception:
-            target_df = df.copy()
-            target_sheet = sheet
-            break
-    except Exception:
-        continue
-
-if target_df is None:
-    st.error("Could not find a sheet with the required Change Impact structure.")
-    st.write("Sheets checked:", xls.sheet_names)
-    st.stop()
-
-st.info(f"Using sheet: **{target_sheet}**")
-
-# Normalize column headers
-df = target_df
-df.columns = df.columns.str.strip().str.replace("\n", " ", regex=True)
-cols_lower = [col.lower() for col in df.columns]
-
-# Determine format
-is_new_format = any("workstream" in col for col in cols_lower)
-is_old_format = any("process" in col for col in cols_lower)
-
-# Identify key columns
-def find_column(keywords):
+def detect_columns(df):
+    col_map = {}
     for col in df.columns:
-        col_lower = col.lower()
-        if all(k in col_lower for k in keywords):
-            return col
-    return None
+        col_l = col.lower()
+        if "stakeholder" in col_l and "group" in col_l:
+            col_map["stakeholder"] = col
+        elif "perception" in col_l:
+            col_map["perception"] = col
+        elif "impact" in col_l and "level" in col_l:
+            col_map["impact"] = col
+    return col_map if len(col_map) == 3 else None
 
-identifier_col = find_column(["workstream"]) if is_new_format else find_column(["process"])
-stakeholder_col = find_column(["stakeholder"])
-perception_col = find_column(["perception"])
-impact_col = df.columns[3]  # Always use 4th column for Level of Impact
+def plot_impact(df, impact_col, stakeholder_col):
+    df = df[[stakeholder_col, impact_col]].dropna()
+    df[impact_col] = df[impact_col].str.strip().str.title()
+    df[stakeholder_col] = df[stakeholder_col].astype(str).str.strip()
+    impact_levels = ["High", "Medium", "Low"]
+    colors = {"High": "red", "Medium": "orange", "Low": "green"}
+    df = df[df[impact_col].isin(impact_levels)]
+    if df.empty:
+        st.write("No recognizable impact levels found.")
+        return
+    impact_counts = df.groupby([stakeholder_col, impact_col]).size().unstack(fill_value=0)
+    impact_counts = impact_counts.reindex(columns=impact_levels, fill_value=0)
+    fig, ax = plt.subplots(figsize=(10, 6))
+    impact_counts.plot(kind="bar", stacked=True, ax=ax, color=[colors.get(lvl, "gray") for lvl in impact_counts.columns])
+    ax.set_title("Degree of Impact by Stakeholder")
+    ax.set_ylabel("Count of Changes")
+    ax.legend(title="Level of Impact")
+    st.pyplot(fig)
 
-required = [identifier_col, stakeholder_col, impact_col, perception_col]
-if any(x is None for x in required):
-    st.error("Could not identify all required columns. Needed: Identifier, Stakeholder, Impact, Perception.")
-    st.write("Available columns:", df.columns.tolist())
-    st.stop()
+def plot_perception(df, perception_col, stakeholder_col):
+    df = df[[stakeholder_col, perception_col]].dropna()
+    df[perception_col] = df[perception_col].str.strip().str.title()
+    df[stakeholder_col] = df[stakeholder_col].astype(str).str.strip()
+    perception_types = ["Negative", "Neutral", "Positive"]
+    colors = {"Negative": "red", "Neutral": "blue", "Positive": "green"}
+    df = df[df[perception_col].isin(perception_types)]
+    if df.empty:
+        st.write("No recognizable perception types found.")
+        return
+    perception_counts = df.groupby([stakeholder_col, perception_col]).size().unstack(fill_value=0)
+    perception_counts = perception_counts.reindex(columns=perception_types, fill_value=0)
+    fig, ax = plt.subplots(figsize=(10, 6))
+    perception_counts.plot(kind="bar", stacked=True, ax=ax, color=[colors.get(p, "gray") for p in perception_counts.columns])
+    ax.set_title("Perception of Change by Stakeholder")
+    ax.set_ylabel("Count of Changes")
+    ax.legend(title="Perception of Change")
+    st.pyplot(fig)
 
-# Prepare data
-df = df[[identifier_col, stakeholder_col, impact_col, perception_col]].copy()
-df.columns = ["Identifier", "Stakeholder", "Impact", "Perception"]
-df.dropna(subset=["Stakeholder", "Impact", "Perception"], inplace=True)
+def main():
+    uploaded_file = st.file_uploader("Upload your Change Impact Analysis Excel file", type=["xlsx"])
+    if uploaded_file:
+        try:
+            xl = pd.ExcelFile(uploaded_file)
+            sheet = [s for s in xl.sheet_names if "impact" in s.lower()][0]
+            df = xl.parse(sheet)
+            col_map = detect_columns(df)
+            if not col_map:
+                st.error("The worksheet doesn't contain recognizable Impact or Perception columns.")
+                return
+            plot_impact(df, col_map["impact"], col_map["stakeholder"])
+            plot_perception(df, col_map["perception"], col_map["stakeholder"])
+            st.subheader("Summary Insights")
+            high_impact_df = df[df[col_map["impact"]].str.lower().str.strip() == "high"]
+            if not high_impact_df.empty:
+                top_group = high_impact_df[col_map["stakeholder"]].mode()[0]
+                st.write(f"**Interesting Fact:** The stakeholder group '{top_group}' has the highest number of high-impact changes ({high_impact_df[col_map['stakeholder']].value_counts().max()}).**")
+                st.write(f"**Conclusion:** The visualizations highlight that {top_group} faces the most high-impact changes, requiring focused training or communication.")
+            else:
+                st.write("No 'High' impact changes found.")
+        except Exception as e:
+            st.error(f"Error processing file: {e}")
 
-# Clean values
-df["Impact"] = df["Impact"].astype(str).str.strip().str.title()
-df["Perception"] = df["Perception"].astype(str).str.strip().str.title()
-df["Stakeholder"] = df["Stakeholder"].astype(str)
-df = df.assign(Stakeholder=df["Stakeholder"].str.split(",")).explode("Stakeholder")
-df["Stakeholder"] = df["Stakeholder"].str.strip()
-
-# Chart 1: Degree of Impact by Stakeholder
-impact_colors = {"Low": "green", "Medium": "orange", "High": "red"}
-impact_counts = df.groupby(["Stakeholder", "Impact"]).size().unstack(fill_value=0)
-
-if impact_counts.empty:
-    st.warning("No impact data available to display.")
-else:
-    present_impact_levels = [col for col in ["Low", "Medium", "High"] if col in impact_counts.columns]
-    if not present_impact_levels:
-        st.warning("No recognizable impact levels found.")
-    else:
-        colors = [impact_colors.get(col, "#333333") for col in present_impact_levels]
-        st.subheader("Degree of Impact by Stakeholder")
-        fig1, ax1 = plt.subplots(figsize=(10, 6))
-        impact_counts[present_impact_levels].plot(kind="bar", stacked=True, ax=ax1, color=colors)
-        ax1.set_ylabel("Number of Changes")
-        ax1.set_xlabel("Stakeholder Group")
-        ax1.set_title("Degree of Impact by Stakeholder")
-        ax1.legend(title="Impact Level")
-        st.pyplot(fig1)
-
-# Chart 2: Perception of Change by Stakeholder
-perception_colors = {"Negative": "red", "Neutral": "blue", "Positive": "green"}
-perception_counts = df.groupby(["Stakeholder", "Perception"]).size().unstack(fill_value=0)
-present_perception_levels = [col for col in ["Negative", "Neutral", "Positive"] if col in perception_counts.columns]
-colors2 = [perception_colors.get(col, "#333333") for col in present_perception_levels]
-
-st.subheader("Perception of Change by Stakeholder")
-fig2, ax2 = plt.subplots(figsize=(10, 6))
-perception_counts[present_perception_levels].plot(kind="bar", stacked=True, ax=ax2, color=colors2)
-ax2.set_ylabel("Number of Changes")
-ax2.set_xlabel("Stakeholder Group")
-ax2.set_title("Perception of Change by Stakeholder")
-ax2.legend(title="Perception")
-st.pyplot(fig2)
-
-# Summary insight
-st.subheader("Summary Insights")
-high_impact_df = df[df["Impact"].str.lower() == "high"]
-if high_impact_df.empty:
-    st.info("No 'High' impact changes found.")
-else:
-    top_group = high_impact_df["Stakeholder"].value_counts().idxmax()
-    count = high_impact_df["Stakeholder"].value_counts().max()
-    st.markdown(f"**Interesting Fact:** The stakeholder group '{top_group}' has the highest number of high-impact changes ({count}).**")
-    st.markdown(f"**Conclusion:** The visualizations highlight that **{top_group}** faces the most high-impact changes, requiring focused training or communication.")
+main()
