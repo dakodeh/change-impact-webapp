@@ -1,80 +1,47 @@
 
-# change_impact_webapp_v15_0_5.py
-# This version includes horizontal bar charts and dynamic y-axis for stakeholder labels.
-
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
 
 st.set_page_config(layout="wide")
-st.title("Change Impact Analysis Summary Tool (v15.0.5)")
+st.title("Change Impact Analysis Summary Tool (v15.0.6)")
 
-uploaded_file = st.file_uploader("Upload a Change Impact Excel File", type=["xlsx"])
-
+uploaded_file = st.file_uploader("Upload Change Impact Excel File", type=["xlsx"])
 if uploaded_file:
     try:
         xls = pd.ExcelFile(uploaded_file)
-        if 'Known Change Impacts' in xls.sheet_names:
-            df = pd.read_excel(xls, sheet_name='Known Change Impacts', skiprows=2)
-        else:
-            st.warning("No 'Known Change Impacts' sheet found.")
-            st.stop()
+        sheet_name = "Known Change Impacts" if "Known Change Impacts" in xls.sheet_names else xls.sheet_names[0]
+        df_raw = pd.read_excel(xls, sheet_name=sheet_name, header=2)
     except Exception as e:
-        st.error(f"Error reading file: {e}")
+        st.error(f"Failed to read Excel file: {e}")
         st.stop()
 
-    # Clean column names
-    df.columns = df.columns.str.strip()
+    impact_col = next((col for col in df_raw.columns if "impact" in col.lower() and "level" in col.lower()), None)
+    stakeholder_col = next((col for col in df_raw.columns if "stakeholder" in col.lower()), None)
 
-    # Identify impact and perception columns
-    impact_col = [col for col in df.columns if 'Impact' in col and 'Level' in col]
-    perception_col = [col for col in df.columns if 'Perception' in col]
+    if not impact_col or not stakeholder_col:
+        st.error("The worksheet doesn't contain recognizable Impact or Stakeholder columns.")
+        st.stop()
 
-    # Expand multi-stakeholder rows
-    if 'Stakeholder Group(s)' in df.columns:
-        df['Stakeholder Group(s)'] = df['Stakeholder Group(s)'].astype(str)
-        df = df.assign(**{
-            'Stakeholder Group': df['Stakeholder Group(s)'].str.split(',')
-        }).explode('Stakeholder Group')
-        df['Stakeholder Group'] = df['Stakeholder Group'].str.strip()
+    # Split stakeholder entries by commas and explode
+    df = df_raw[[impact_col, stakeholder_col]].dropna()
+    df[stakeholder_col] = df[stakeholder_col].astype(str)
+    df[stakeholder_col] = df[stakeholder_col].str.split(",")
+    df = df.explode(stakeholder_col)
+    df[stakeholder_col] = df[stakeholder_col].str.strip()
 
-    # Plot impact
-    if impact_col and 'Stakeholder Group' in df.columns:
-        fig, ax = plt.subplots(figsize=(10, 6))
-        impact_order = ['Low', 'Medium', 'High']
-        sns.countplot(
-            data=df,
-            y='Stakeholder Group',
-            hue=impact_col[0],
-            order=df['Stakeholder Group'].value_counts().index,
-            hue_order=impact_order,
-            palette={'Low': 'green', 'Medium': 'orange', 'High': 'red'},
-            ax=ax
-        )
-        ax.set_title('Degree of Impact by Stakeholder')
-        ax.set_xlabel('Number of Changes')
-        ax.set_ylabel('Stakeholder Group')
-        st.pyplot(fig)
-    else:
-        st.warning("The worksheet doesn't contain recognizable Impact or Stakeholder columns.")
+    # Normalize impact levels
+    impact_levels = ["Low", "Medium", "High"]
+    df = df[df[impact_col].isin(impact_levels)]
 
-    # Plot perception
-    if perception_col and 'Stakeholder Group' in df.columns:
-        fig, ax = plt.subplots(figsize=(10, 6))
-        perception_order = ['Negative', 'Neutral', 'Positive']
-        sns.countplot(
-            data=df,
-            y='Stakeholder Group',
-            hue=perception_col[0],
-            order=df['Stakeholder Group'].value_counts().index,
-            hue_order=perception_order,
-            palette={'Negative': 'red', 'Neutral': 'blue', 'Positive': 'green'},
-            ax=ax
-        )
-        ax.set_title('Perception of Change by Stakeholder')
-        ax.set_xlabel('Number of Changes')
-        ax.set_ylabel('Stakeholder Group')
-        st.pyplot(fig)
-    else:
-        st.warning("The worksheet doesn't contain recognizable Perception or Stakeholder columns.")
+    # Count occurrences
+    df_counts = df.groupby([stakeholder_col, impact_col]).size().unstack(fill_value=0)[impact_levels]
+
+    # Plot
+    st.subheader("Change Impacts by Stakeholder Group")
+    fig, ax = plt.subplots(figsize=(12, len(df_counts) * 0.5 + 2))
+    df_counts.plot(kind="barh", stacked=True, ax=ax, color=["#A6CEE3", "#1F78B4", "#B2DF8A"])
+    ax.set_xlabel("Number of Changes")
+    ax.set_ylabel("Stakeholder Group")
+    ax.set_title("Distribution of Change Impact Levels by Stakeholder")
+    st.pyplot(fig)
