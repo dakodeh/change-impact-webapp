@@ -1,105 +1,56 @@
 
-# Streamlit Change Impact Web App - v15.0.9
-# Adds summary insights back in with bullet points.
+# change_impact_webapp_v15_1_0.py
+# Includes pie chart visualization for Potential Mitigation Strategies.
 
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 
 st.set_page_config(layout="wide")
-st.title("Change Impact Analysis Summary Tool (v15.0.9)")
+st.title("Change Impact Analysis Summary Tool (v15.1.0)")
 
-uploaded_file = st.file_uploader("Upload Change Impact Excel File", type=["xlsx"])
-if uploaded_file:
+def load_data(file):
     try:
-        xls = pd.ExcelFile(uploaded_file)
-        sheet_name = "Known Change Impacts" if "Known Change Impacts" in xls.sheet_names else xls.sheet_names[0]
-        df_raw = pd.read_excel(xls, sheet_name=sheet_name, header=2)
+        xls = pd.ExcelFile(file)
+        sheet_names = xls.sheet_names
+        sheet_to_use = [name for name in sheet_names if "known change impacts" in name.lower()]
+        if not sheet_to_use:
+            st.error("No 'Known Change Impacts' worksheet found.")
+            return None
+        df = pd.read_excel(xls, sheet_name=sheet_to_use[0], header=2)
+        return df
     except Exception as e:
-        st.error(f"Failed to read Excel file: {e}")
-        st.stop()
+        st.error(f"Error loading Excel file: {e}")
+        return None
 
-    impact_col = next((c for c in df_raw.columns if "impact" in c.lower() and "level" in c.lower()), None)
-    perception_col = next((c for c in df_raw.columns if "perception" in c.lower()), None)
-    stakeholder_col = next((c for c in df_raw.columns if "stakeholder" in c.lower()), None)
+def find_mitigation_columns(df):
+    mitigation_keywords = ["Comms", "Training", "HR", "Other"]
+    columns_found = {}
+    for col in df.columns:
+        for keyword in mitigation_keywords:
+            if keyword.lower() in str(col).lower():
+                columns_found[keyword] = col
+    return columns_found
 
-    if not impact_col or not stakeholder_col:
-        st.error("Could not detect required columns in worksheet.")
-        st.stop()
+def plot_mitigation_pie(df, mitigation_cols):
+    counts = {}
+    for label, col in mitigation_cols.items():
+        counts[label] = df[col].apply(lambda x: pd.notna(x) and str(x).strip() != "").sum()
+    if sum(counts.values()) == 0:
+        st.info("No data found for mitigation strategy pie chart.")
+        return
+    fig, ax = plt.subplots()
+    ax.pie(counts.values(), labels=counts.keys(), autopct='%1.1f%%', startangle=90)
+    ax.set_title("Distribution of Mitigation Strategies")
+    st.pyplot(fig)
 
-    # Expand comma‑separated stakeholders
-    df = df_raw.dropna(subset=[impact_col, stakeholder_col]).copy()
-    df[stakeholder_col] = df[stakeholder_col].astype(str).str.split(',')
-    df = df.explode(stakeholder_col)
-    df[stakeholder_col] = df[stakeholder_col].str.strip()
-
-    ### --- Visualization helpers ---
-    def horiz_stacked(data, value_col, title, colors, legend_title):
-        counts = data.groupby([stakeholder_col, value_col]).size().unstack(fill_value=0)
-        counts = counts[[c for c in colors.keys() if c in counts.columns]]
-        fig, ax = plt.subplots(figsize=(11, max(4, len(counts) * 0.45)))
-        left = [0]*len(counts)
-        for cat in counts.columns:
-            vals = counts[cat]
-            ax.barh(counts.index, vals, left=left, color=colors[cat], label=cat)
-            # add labels
-            for i, (v,lft) in enumerate(zip(vals, left)):
-                if v > 0:
-                    ax.text(lft+v/2, i, int(v), ha='center', va='center', color='white', fontsize=8)
-            left = left + vals
-        ax.set_xlabel("Number of Changes")
-        ax.set_ylabel("Stakeholder Group")
-        ax.set_title(title)
-        ax.legend(title=legend_title, bbox_to_anchor=(1.05,1), loc='upper left')
-        st.pyplot(fig)
-        plt.clf()
-
-    st.subheader("Change Impacts by Stakeholder Group")
-    impact_colors = {"Low":"green","Medium":"orange","High":"red"}
-    horiz_stacked(df, impact_col, "Distribution of Change Impact Levels by Stakeholder", impact_colors, "Level of Impact")
-
-    if perception_col:
-        st.subheader("Perception of Change by Stakeholder")
-        perception_colors = {"Positive":"green","Neutral":"blue","Negative":"red"}
-        horiz_stacked(df, perception_col, "Distribution of Change Perception Levels by Stakeholder", perception_colors, "Perception of Change")
-
-    ### --- Summary Insights ---
-    st.subheader("Summary Insights")
-
-    bullets = []
-
-    # total counts
-    total_changes = len(df)
-    impact_counts = df[impact_col].value_counts().to_dict()
-    bullets.append(f"• **{total_changes}** total changes analyzed: " + ", ".join(f"{lvl} **{cnt}**" for lvl,cnt in impact_counts.items()))
-
-    # most impacted stakeholder groups (top 3)
-    top_stake = df[stakeholder_col].value_counts().head(3)
-    bullets.append("• Most impacted stakeholder groups: " + ", ".join(f"{grp} ({cnt})" for grp,cnt in top_stake.items()))
-
-    # mostly negative perception
-    if perception_col:
-        perc = df.groupby(stakeholder_col)[perception_col].apply(lambda s: (s=='Negative').mean())
-        neg_groups = perc[perc>=0.6].index.tolist()
-        if neg_groups:
-            bullets.append("• Stakeholders with mostly negative perception: " + ", ".join(neg_groups))
-
-    # high impact negative
-    high_neg = []
-    if perception_col:
-        mask = (df[impact_col]=='High') & (df[perception_col]=='Negative')
-        high_neg = df.loc[mask, stakeholder_col].unique().tolist()
-        if high_neg:
-            bullets.append("• High‑impact changes perceived negatively for: " + ", ".join(high_neg))
-
-    # multiple high impacts
-    high_counts = df[df[impact_col]=='High'][stakeholder_col].value_counts()
-    multi_high = high_counts[high_counts>1]
-    if not multi_high.empty:
-        bullets.append("• Stakeholders with multiple High impact changes: " + ", ".join(multi_high.index))
-
-    if bullets:
-        for b in bullets:
-            st.markdown(b)
-    else:
-        st.write("No noteworthy patterns detected.")
+uploaded_file = st.file_uploader("Upload Change Impact Analysis Excel File", type=["xlsx"])
+if uploaded_file:
+    df = load_data(uploaded_file)
+    if df is not None:
+        mitigation_cols = find_mitigation_columns(df)
+        if mitigation_cols:
+            st.subheader("📊 Mitigation Strategy Distribution")
+            plot_mitigation_pie(df, mitigation_cols)
+        else:
+            st.warning("No mitigation strategy columns found in the file.")
