@@ -1,105 +1,130 @@
 
-# Streamlit Change Impact Web App - v15.0.9
-# Adds summary insights back in with bullet points.
-
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 
+__version__ = "15.1.0"
 st.set_page_config(layout="wide")
-st.title("Change Impact Analysis Summary Tool (v15.0.9)")
+st.title(f"Change Impact Analysis Summary Tool (v{__version__})")
 
-uploaded_file = st.file_uploader("Upload Change Impact Excel File", type=["xlsx"])
-if uploaded_file:
+def load_data(uploaded_file):
     try:
         xls = pd.ExcelFile(uploaded_file)
-        sheet_name = "Known Change Impacts" if "Known Change Impacts" in xls.sheet_names else xls.sheet_names[0]
-        df_raw = pd.read_excel(xls, sheet_name=sheet_name, header=2)
+        if "Known Change Impacts" not in xls.sheet_names:
+            st.error("'Known Change Impacts' worksheet not found.")
+            return None
+        df_raw = pd.read_excel(xls, sheet_name="Known Change Impacts", header=2)
+        return df_raw
     except Exception as e:
-        st.error(f"Failed to read Excel file: {e}")
-        st.stop()
+        st.error(f"Error reading Excel file: {e}")
+        return None
 
-    impact_col = next((c for c in df_raw.columns if "impact" in c.lower() and "level" in c.lower()), None)
-    perception_col = next((c for c in df_raw.columns if "perception" in c.lower()), None)
-    stakeholder_col = next((c for c in df_raw.columns if "stakeholder" in c.lower()), None)
+def clean_dataframe(df):
+    df.columns = df.columns.str.strip()
+    df = df.dropna(how='all')
+    return df
 
-    if not impact_col or not stakeholder_col:
-        st.error("Could not detect required columns in worksheet.")
-        st.stop()
+def expand_stakeholders(df, column="Stakeholder Group(s)"):
+    df = df[df[column].notna()]
+    df[column] = df[column].astype(str).str.split(",")
+    df = df.explode(column)
+    df[column] = df[column].str.strip()
+    return df
 
-    # Expand comma‑separated stakeholders
-    df = df_raw.dropna(subset=[impact_col, stakeholder_col]).copy()
-    df[stakeholder_col] = df[stakeholder_col].astype(str).str.split(',')
-    df = df.explode(stakeholder_col)
-    df[stakeholder_col] = df[stakeholder_col].str.strip()
+def plot_horizontal_stacked_bar(df, category_col, stack_col, title, color_map):
+    if df.empty:
+        st.warning(f"No data available for '{title}'")
+        return
 
-    ### --- Visualization helpers ---
-    def horiz_stacked(data, value_col, title, colors, legend_title):
-        counts = data.groupby([stakeholder_col, value_col]).size().unstack(fill_value=0)
-        counts = counts[[c for c in colors.keys() if c in counts.columns]]
-        fig, ax = plt.subplots(figsize=(11, max(4, len(counts) * 0.45)))
-        left = [0]*len(counts)
-        for cat in counts.columns:
-            vals = counts[cat]
-            ax.barh(counts.index, vals, left=left, color=colors[cat], label=cat)
-            # add labels
-            for i, (v,lft) in enumerate(zip(vals, left)):
-                if v > 0:
-                    ax.text(lft+v/2, i, int(v), ha='center', va='center', color='white', fontsize=8)
-            left = left + vals
-        ax.set_xlabel("Number of Changes")
-        ax.set_ylabel("Stakeholder Group")
-        ax.set_title(title)
-        ax.legend(title=legend_title, bbox_to_anchor=(1.05,1), loc='upper left')
+    pivot_df = df.pivot_table(index=category_col, columns=stack_col, aggfunc='size', fill_value=0)
+    pivot_df = pivot_df.reindex(pivot_df.sum(axis=1).sort_values().index)
+
+    fig, ax = plt.subplots(figsize=(10, max(4, len(pivot_df)*0.5)))
+    bottom = None
+    for column in pivot_df.columns:
+        ax.barh(pivot_df.index, pivot_df[column], label=column, left=bottom, color=color_map.get(column, None))
+        bottom = pivot_df[column] if bottom is None else bottom + pivot_df[column]
+        for idx, value in enumerate(pivot_df[column]):
+            if value > 0:
+                ax.text(bottom[idx] - value/2, idx, str(value), ha='center', va='center', fontsize=8, color='black')
+
+    ax.set_xlabel("Number of Changes")
+    ax.set_title(title)
+    ax.legend(title=stack_col, bbox_to_anchor=(1.05, 1), loc='upper left')
+    st.pyplot(fig)
+
+def plot_mitigation_pie(df):
+    try:
+        mitigation_cols = [c for c in df.columns if c.strip().lower() in ['comms', 'training', 'hr', 'other']]
+        if not mitigation_cols:
+            st.warning("No data found for mitigation strategy pie chart.")
+            return
+
+        counts = dict()
+        for m_col in mitigation_cols:
+            cleaned = df[m_col].astype(str).str.strip().replace('', pd.NA).dropna()
+            counts[m_col] = cleaned.count()
+
+        if sum(counts.values()) == 0:
+            st.warning("Mitigation columns exist but contain no data.")
+            return
+
+        fig, ax = plt.subplots()
+        wedges, texts, autotexts = ax.pie(counts.values(), labels=counts.keys(), autopct='%1.1f%%',
+                                          startangle=90, pctdistance=0.85, wedgeprops=dict(width=0.3),
+                                          textprops={'fontsize': 8})
+        for i, a in enumerate(autotexts):
+            a.set_position((a.get_position()[0]*1.2, a.get_position()[1]*1.2))
+        ax.set_title("Mitigation Strategy Distribution", pad=20)
         st.pyplot(fig)
-        plt.clf()
+    except Exception as e:
+        st.warning(f"Could not generate pie chart: {e}")
 
-    st.subheader("Change Impacts by Stakeholder Group")
-    impact_colors = {"Low":"green","Medium":"orange","High":"red"}
-    horiz_stacked(df, impact_col, "Distribution of Change Impact Levels by Stakeholder", impact_colors, "Level of Impact")
+def generate_summary_insights(df):
+    if "Impact Level" not in df.columns or "Stakeholder Group(s)" not in df.columns:
+        return "⚠️ Summary Insights unavailable due to missing required columns."
 
-    if perception_col:
-        st.subheader("Perception of Change by Stakeholder")
-        perception_colors = {"Positive":"green","Neutral":"blue","Negative":"red"}
-        horiz_stacked(df, perception_col, "Distribution of Change Perception Levels by Stakeholder", perception_colors, "Perception of Change")
-
-    ### --- Summary Insights ---
-    st.subheader("Summary Insights")
-
-    bullets = []
-
-    # total counts
-    total_changes = len(df)
-    impact_counts = df[impact_col].value_counts().to_dict()
-    bullets.append(f"• **{total_changes}** total changes analyzed: " + ", ".join(f"{lvl} **{cnt}**" for lvl,cnt in impact_counts.items()))
-
-    # most impacted stakeholder groups (top 3)
-    top_stake = df[stakeholder_col].value_counts().head(3)
-    bullets.append("• Most impacted stakeholder groups: " + ", ".join(f"{grp} ({cnt})" for grp,cnt in top_stake.items()))
-
-    # mostly negative perception
-    if perception_col:
-        perc = df.groupby(stakeholder_col)[perception_col].apply(lambda s: (s=='Negative').mean())
-        neg_groups = perc[perc>=0.6].index.tolist()
-        if neg_groups:
-            bullets.append("• Stakeholders with mostly negative perception: " + ", ".join(neg_groups))
-
-    # high impact negative
-    high_neg = []
-    if perception_col:
-        mask = (df[impact_col]=='High') & (df[perception_col]=='Negative')
-        high_neg = df.loc[mask, stakeholder_col].unique().tolist()
-        if high_neg:
-            bullets.append("• High‑impact changes perceived negatively for: " + ", ".join(high_neg))
-
-    # multiple high impacts
-    high_counts = df[df[impact_col]=='High'][stakeholder_col].value_counts()
-    multi_high = high_counts[high_counts>1]
-    if not multi_high.empty:
-        bullets.append("• Stakeholders with multiple High impact changes: " + ", ".join(multi_high.index))
-
-    if bullets:
-        for b in bullets:
-            st.markdown(b)
+    expanded_df = expand_stakeholders(df.copy())
+    summary = ""
+    high_impact = expanded_df[expanded_df["Impact Level"].str.lower() == "high"]
+    if not high_impact.empty:
+        most_affected = high_impact["Stakeholder Group(s)"].value_counts().idxmax()
+        count = high_impact["Stakeholder Group(s)"].value_counts().max()
+        summary += f"Interesting Fact: The stakeholder group '{most_affected}' has the highest number of high-impact changes ({count}).\n\n"
+        summary += f"Conclusion: The visualizations highlight that {most_affected} faces the most high-impact changes, requiring focused training or communication."
     else:
-        st.write("No noteworthy patterns detected.")
+        summary = "No 'High' impact changes found."
+
+    return summary
+
+uploaded_file = st.file_uploader("Upload your Change Impact Assessment Excel file", type=["xlsx"])
+if uploaded_file:
+    df = load_data(uploaded_file)
+    if df is not None:
+        df = clean_dataframe(df)
+
+        if "Stakeholder Group(s)" in df.columns and "Impact Level" in df.columns:
+            st.subheader("Change Impacts by Stakeholder Group")
+            plot_horizontal_stacked_bar(
+                expand_stakeholders(df[["Stakeholder Group(s)", "Impact Level"]].copy()),
+                "Stakeholder Group(s)", "Impact Level",
+                "Change Impacts by Stakeholder Group",
+                {"Low": "green", "Medium": "gold", "High": "red"}
+            )
+        if "Stakeholder Group(s)" in df.columns and "Perception" in df.columns:
+            st.subheader("Perception of Change by Stakeholder")
+            plot_horizontal_stacked_bar(
+                expand_stakeholders(df[["Stakeholder Group(s)", "Perception"]].copy()),
+                "Stakeholder Group(s)", "Perception",
+                "Perception of Change by Stakeholder",
+                {"Positive": "green", "Neutral": "gray", "Negative": "red"}
+            )
+        st.subheader("Potential Mitigation Strategies")
+        plot_mitigation_pie(df)
+
+        st.subheader("Summary Insights")
+        st.markdown(generate_summary_insights(df))
+
+        st.markdown("---")
+        st.markdown(f"**Tool Version**: v{__version__}  
+_Last updated: 2025-08-01 14:54_", unsafe_allow_html=True)
