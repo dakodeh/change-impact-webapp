@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 
 st.set_page_config(layout="wide")
 st.title("Change Impact Analysis Summary Tool (v15.1.5)")
-st.markdown("**Tool Version**: v15.1.5  
+st.markdown("**Tool Version**: v15.1.5")
 _Last updated: 2025-08-01 15:45_", unsafe_allow_html=True)
 
 uploaded_file = st.file_uploader("Upload a completed Change Impact Assessment", type=[".xlsx"])
