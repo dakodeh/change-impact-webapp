@@ -1,15 +1,15 @@
-__version__ = '15.1.5'
-__last_updated__ = '2025-08-01 16:00'
+__version__ = '15.1.6'
+__last_updated__ = '2025-08-01 12:55'
 
-# Streamlit Change Impact Web App - v15.1.5
-# Adds pie chart for Potential Mitigation Strategies.
+# Streamlit Change Impact Web App - v15.1.6
+# Updates pie chart to donut style with larger hole and adjusted colors.
 
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 
 st.set_page_config(layout="wide")
-st.title("Change Impact Analysis Summary Tool (v15.1.5)")
+st.title("Change Impact Analysis Summary Tool (v15.1.6)")
 st.markdown(f"**Tool Version**: v{__version__}")
 st.markdown(f"_Last updated: {__last_updated__}_", unsafe_allow_html=True)
 
@@ -75,9 +75,13 @@ if uploaded_file:
             st.warning("No mitigation strategies marked in the data.")
             return
         
-        colors = ['#ff9999', '#66b3ff', '#99ff99', '#ffcc99'][:len(labels)]
+        # Colors inspired by the provided image
+        colors = ['#1E90FF', '#FFA500', '#32CD32', '#DC143C']  # Blue, Orange, Green, Crimson
+        colors = colors[:len(labels)]
+        
         fig, ax = plt.subplots(figsize=(8, 8))
-        ax.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%', startangle=90)
+        # Create donut chart with larger inner hole
+        ax.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%', startangle=90, wedgeprops=dict(width=0.3))
         ax.axis('equal')
         ax.set_title(title)
         st.pyplot(fig)
@@ -93,7 +97,7 @@ if uploaded_file:
         horiz_stacked(df, perception_col, "Distribution of Change Perception Levels by Stakeholder", perception_colors, "Perception of Change")
 
     st.subheader("Potential Mitigation Strategies")
-    mitigation_pie(df_raw, "Distribution of Mitigation Strategies")
+    mitigation_pie(df_raw, "Mitigation Strategy Distribution")
 
     ### --- Summary Insights ---
     st.subheader("Summary Insights")
