@@ -1,19 +1,15 @@
-__version__ = '15.1.4'
-__last_updated__ = '2025-08-01 15:41'
+__version__ = '15.1.5'
+__last_updated__ = '2025-08-01 16:00'
 
-
-# Streamlit Change Impact Web App - v15.0.9
-# Adds summary insights back in with bullet points.
+# Streamlit Change Impact Web App - v15.1.5
+# Adds pie chart for Potential Mitigation Strategies.
 
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 
 st.set_page_config(layout="wide")
-__version__ = '15.1.3'
-__last_updated__ = '2025-08-01 11:35'
-st.title("Change Impact Analysis Summary Tool (v15.0.9)")
-st.markdown("**Tool Version**: v15.1.8 — *Last updated: 2025-08-01 15:51*", unsafe_allow_html=True)
+st.title("Change Impact Analysis Summary Tool (v15.1.5)")
 st.markdown(f"**Tool Version**: v{__version__}")
 st.markdown(f"_Last updated: {__last_updated__}_", unsafe_allow_html=True)
 
@@ -35,7 +31,7 @@ if uploaded_file:
         st.error("Could not detect required columns in worksheet.")
         st.stop()
 
-    # Expand comma‑separated stakeholders
+    # Expand comma-separated stakeholders
     df = df_raw.dropna(subset=[impact_col, stakeholder_col]).copy()
     df[stakeholder_col] = df[stakeholder_col].astype(str).str.split(',')
     df = df.explode(stakeholder_col)
@@ -62,6 +58,31 @@ if uploaded_file:
         st.pyplot(fig)
         plt.clf()
 
+    def mitigation_pie(data, title):
+        mitigation_cols = ['Comms', 'Training', 'HR', 'Other']
+        valid_cols = [col for col in mitigation_cols if col in data.columns]
+        if not valid_cols:
+            st.warning("No mitigation strategy columns (Comms, Training, HR, Other) found in the data.")
+            return
+        
+        # Count non-blank values ('X') in each mitigation column
+        counts = {col: data[col].notna().sum() for col in valid_cols}
+        labels = list(counts.keys())
+        sizes = list(counts.values())
+        
+        # Skip if no non-zero counts
+        if sum(sizes) == 0:
+            st.warning("No mitigation strategies marked in the data.")
+            return
+        
+        colors = ['#ff9999', '#66b3ff', '#99ff99', '#ffcc99'][:len(labels)]
+        fig, ax = plt.subplots(figsize=(8, 8))
+        ax.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%', startangle=90)
+        ax.axis('equal')
+        ax.set_title(title)
+        st.pyplot(fig)
+        plt.clf()
+
     st.subheader("Change Impacts by Stakeholder Group")
     impact_colors = {"Low":"green","Medium":"orange","High":"red"}
     horiz_stacked(df, impact_col, "Distribution of Change Impact Levels by Stakeholder", impact_colors, "Level of Impact")
@@ -70,6 +91,9 @@ if uploaded_file:
         st.subheader("Perception of Change by Stakeholder")
         perception_colors = {"Positive":"green","Neutral":"blue","Negative":"red"}
         horiz_stacked(df, perception_col, "Distribution of Change Perception Levels by Stakeholder", perception_colors, "Perception of Change")
+
+    st.subheader("Potential Mitigation Strategies")
+    mitigation_pie(df_raw, "Distribution of Mitigation Strategies")
 
     ### --- Summary Insights ---
     st.subheader("Summary Insights")
@@ -98,7 +122,7 @@ if uploaded_file:
         mask = (df[impact_col]=='High') & (df[perception_col]=='Negative')
         high_neg = df.loc[mask, stakeholder_col].unique().tolist()
         if high_neg:
-            bullets.append("• High‑impact changes perceived negatively for: " + ", ".join(high_neg))
+            bullets.append("• High-impact changes perceived negatively for: " + ", ".join(high_neg))
 
     # multiple high impacts
     high_counts = df[df[impact_col]=='High'][stakeholder_col].value_counts()
